@@ -21,7 +21,7 @@ logger.addHandler(console_logger)
 
 # initialize Arctic
 snapshotter = CoinbaseProSnapshotClient()
-arctic = Arctic('localhost')
+arctic = Arctic('mongodb')
 arctic.initialize_library('COINBASE_PRO_ONE_MIN_SNAP', lib_type=TICK_STORE)
 tick_lib = arctic['COINBASE_PRO_ONE_MIN_SNAP']
 
