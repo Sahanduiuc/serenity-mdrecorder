@@ -1,5 +1,4 @@
 from coinbasepro import PublicClient
-from decimal import Decimal
 
 from cloudwall.serenity.mdrecorder.api import MDSnapshotClient
 
