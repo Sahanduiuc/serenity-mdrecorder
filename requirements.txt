@@ -1,0 +1,4 @@
+arctic==1.79.2
+coinbasepro==0.1.1
+pyzmq==18.1.0
+tornado==6.0.3
