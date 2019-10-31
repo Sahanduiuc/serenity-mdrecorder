@@ -11,7 +11,7 @@ services:
         image: mongo:latest
         container_name: "mongodb"
         volumes:
-          - /mnt/raid/data/behemoth:/data/db
+          - /mnt/raid/data/behemoth/arctic:/data/db
         ports:
             - 27017:27017
         command: mongod
