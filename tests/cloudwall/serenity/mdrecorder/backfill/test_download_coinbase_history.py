@@ -1,7 +1,7 @@
 import datetime
 from decimal import Decimal
 from datetime import date
-from cloudwall.serenity.backfill.download_coinbase_history import backfill_coinbase_trades
+from cloudwall.serenity.mdrecorder.backfill.download_coinbase_history import backfill_coinbase_trades
 
 
 def test_backfill_coinbase_trades(mocker):
