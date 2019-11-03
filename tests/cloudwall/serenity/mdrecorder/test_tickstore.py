@@ -18,3 +18,4 @@ def test_tickstore(mocker: MockFixture):
     assert df.size == 6000
 
     tickstore.close()
+    tickstore.destroy()
