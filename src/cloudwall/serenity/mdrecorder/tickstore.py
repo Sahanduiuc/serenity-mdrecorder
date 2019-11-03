@@ -168,8 +168,8 @@ class LocalTickstore(Tickstore):
 
         # select ticks matching the exact start/end timestamps
         all_ticks = pd.concat(loaded_dfs)
-        time_mask = (all_ticks.index.get_level_values('date') >= start) \
-            & (all_ticks.index.get_level_values('date') <= end)
+        time_mask = (all_ticks.index.get_level_values(self.timestamp_column) >= start) \
+            & (all_ticks.index.get_level_values(self.timestamp_column) <= end)
         return all_ticks.loc[time_mask]
 
     def insert(self, symbol: str, ts: BiTimestamp, ticks: pd.DataFrame):
