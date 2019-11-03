@@ -1,10 +1,13 @@
 import datetime
 from decimal import Decimal
 from datetime import date
+
+from pytest_mock import MockFixture
+
 from cloudwall.serenity.mdrecorder.backfill.download_coinbase_history import backfill_coinbase_trades
 
 
-def test_backfill_coinbase_trades(mocker):
+def test_backfill_coinbase_trades(mocker: MockFixture):
     mocker.patch('os.makedirs')
     mock_cbp_client = mocker.patch('coinbasepro.PublicClient').return_value
     mock_cbp_client.get_product_historic_rates.return_value = [{'time': datetime.datetime(2019, 7, 20, 4, 0),
