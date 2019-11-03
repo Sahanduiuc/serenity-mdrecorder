@@ -12,7 +12,12 @@ class BiTimestamp:
     A bitemporal timestamp combining as-at time and as-of time.
     """
 
-    def __init__(self, as_at_date: datetime.date, as_of_time: datetime.datetime = datetime.datetime.max):
+    # cannot use datetime.min / datetime.max due to limitations
+    # see https://pandas.pydata.org/pandas-docs/stable/user_guide/timeseries.html#representing-out-of-bounds-spans
+    start_as_of = pd.Timestamp.min.to_pydatetime()
+    latest_as_of = pd.Timestamp.max.to_pydatetime()
+
+    def __init__(self, as_at_date: datetime.date, as_of_time: datetime.datetime = latest_as_of):
         self.as_at_date = as_at_date
         self.as_of_time = as_of_time
         pass
@@ -34,7 +39,7 @@ class Tickstore(ABC):
 
     @abstractmethod
     def select(self, symbol: str, start: datetime.datetime, end: datetime.datetime,
-               as_of_time: datetime.datetime = datetime.datetime.max) -> pd.DataFrame:
+               as_of_time: datetime.datetime = BiTimestamp.latest_as_of) -> pd.DataFrame:
         """
         Selects all ticks between start and end timestamps, optionally restricted to version effective as of as_of_time.
         :return: a DataFrame with the content matching the query
@@ -71,32 +76,23 @@ class Tickstore(ABC):
         pass
 
 
-class LocalTickstore(Tickstore):
+class DataFrameIndex:
     """
-    Tickstore meant to run against local disk for maximum performance.
+    HDF5- and Pandas-based multi-level index used by LocalTickstore.
     """
 
-    def __init__(self, base_path: Path, timestamp_column: str = 'date'):
-        self.base_path = base_path.resolve()
-        self.index_path = base_path.joinpath(Path('index.h5'))
-        self.timestamp_column = timestamp_column
-
-        # initialize storage location
-        self.base_path.mkdir(parents=True, exist_ok=True)
-
-        # extract table name
-        self.table_name = self.base_path.parts[-1]
-
-        # initialize state flags
+    def __init__(self, base_path: Path, index_path: Path, table_name: str):
+        self.base_path = base_path
+        self.index_path = index_path
+        self.table_name = table_name
         self.dirty = False
-        self.closed = False
 
         if not self.index_path.exists():
             # initialize index; for backward compatibility support generating an index
             # from directories and files only. in this mode we also rewrite the paths
             # to support the bitemporal storage engine.
             index_rows = []
-            splay_paths = list(self.base_path.rglob("*.h5"))
+            splay_paths = list(base_path.rglob("*.h5"))
             for path in splay_paths:
                 # extract date
                 parts = path.parts
@@ -122,8 +118,8 @@ class LocalTickstore(Tickstore):
 
                 index_rows.append({'symbol': symbol,
                                    'date': splay_date,
-                                   'start_time': datetime.datetime.min,
-                                   'end_time': datetime.datetime.max,
+                                   'start_time': BiTimestamp.start_as_of,
+                                   'end_time': BiTimestamp.latest_as_of,
                                    'version': symbol_version,
                                    'path': str(path)
                                    })
@@ -141,111 +137,163 @@ class LocalTickstore(Tickstore):
                                                  'path'])
 
             index_df.set_index(['symbol', 'date'], inplace=True)
-            self.index = index_df
+            self.df = index_df
 
             self._mark_dirty()
-            self._save_index()
+            self.flush()
         else:
-            self.index = pd.read_hdf(str(self.index_path))
+            # noinspection PyTypeChecker
+            existing_index: pd.DataFrame = pd.read_hdf(str(self.index_path))
+            self.df = existing_index
 
-    # noinspection PyUnresolvedReferences
     def select(self, symbol: str, start: datetime.datetime, end: datetime.datetime,
-               as_of_time: datetime.datetime = datetime.datetime.max) -> pd.DataFrame:
-        self._check_closed('select')
+               as_of_time: datetime.datetime) -> pd.DataFrame:
+        # short circuit if symbol missing
+        if not self.df.index.get_level_values('symbol').contains(symbol):
+            return pd.DataFrame()
 
-        # grab the list of splays matching the start / end range that are valid for as_of_time
-        symbol_data = self.index.loc[symbol]
+        # find all dates in range where as_of_time is between start_time and end_time
+        symbol_data = self.df.loc[symbol]
         mask = (symbol_data.index.get_level_values('date') >= start) \
             & (symbol_data.index.get_level_values('date') <= end) \
             & (symbol_data['start_time'] <= as_of_time) \
             & (symbol_data['end_time'] >= as_of_time)
-        selected = self.index.loc[symbol][mask]
+        selected = self.df.loc[symbol][mask]
+        return selected
+
+    def insert(self, symbol: str, as_at_date: datetime.date, create_write_path_func) -> Path:
+        # if there's at least one entry in the index for this (symbol, as_at_date
+        # increment the version and set the start/end times such that the previous
+        # version is logically deleted and the next version becomes latest
+        if self.df.index.isin([(symbol, as_at_date)]).any():
+            all_versions = self.df.loc[[(symbol, as_at_date)]]
+
+            start_time = datetime.datetime.utcnow()
+            end_time = BiTimestamp.latest_as_of
+
+            prev_version = all_versions['version'][-1]
+            version = prev_version + 1
+            all_versions.loc[(all_versions['version'] == prev_version), 'end_time'] = start_time
+
+            self.df.update(all_versions)
+        else:
+            start_time = BiTimestamp.start_as_of
+            end_time = BiTimestamp.latest_as_of
+            version = 0
+
+        write_path = create_write_path_func(version)
+
+        # was not able to figure out a way to insert into a MultiIndex without re-setting the
+        # index columns and de-duping but I suspect there is a nicer way to do the below
+        new_index_row = pd.DataFrame.from_dict({'symbol': [symbol],
+                                                'date': [as_at_date],
+                                                'start_time': [start_time],
+                                                'end_time': [end_time],
+                                                'version': [version],
+                                                'path': [str(write_path)]
+                                                })
+        new_index_row.set_index(['symbol', 'date'], inplace=True)
+        self.df = self.df.append(new_index_row)
+
+        # selects don't work properly unless you remove duplicates
+        self.df = self.df.loc[~self.df.index.duplicated(keep='first')]
+
+        return write_path
+
+    def delete(self, symbol: str, as_at_date: datetime.date):
+        if self.df.index.isin([(symbol, as_at_date)]).any():
+            all_versions = self.df.loc[[(symbol, as_at_date)]]
+            start_time = datetime.datetime.utcnow()
+
+            # logically delete by setting the most recent version to end now; note this means that deletes
+            # don't have a version number or row, so may want to think about this
+            prev_version = all_versions['version'][-1]
+            all_versions.loc[(all_versions['version'] == prev_version), 'end_time'] = start_time
+
+            self.df.update(all_versions)
+
+    def flush(self):
+        self.df.to_hdf(str(self.index_path), self.table_name, mode='w', append=False, complevel=9, complib='blosc')
+        self._mark_dirty(False)
+
+    def _mark_dirty(self, dirty=True):
+        self.dirty = dirty
+
+
+class LocalTickstore(Tickstore):
+    """
+    Tickstore meant to run against local disk for maximum performance.
+    """
+
+    def __init__(self, base_path: Path, timestamp_column: str = 'date'):
+        self.base_path = base_path.resolve()
+        self.timestamp_column = timestamp_column
+
+        # initialize storage location
+        self.base_path.mkdir(parents=True, exist_ok=True)
+
+        # initialize and potentially build the index
+        # extract table name
+        table_name = self.base_path.parts[-1]
+        self.index = DataFrameIndex(base_path, base_path.joinpath(Path('index.h5')), table_name)
+
+        # initialize state
+        self.closed = False
+
+    def select(self, symbol: str, start: datetime.datetime, end: datetime.datetime,
+               as_of_time: datetime.datetime = BiTimestamp.latest_as_of) -> pd.DataFrame:
+        self._check_closed('select')
+
+        # pass 1: grab the list of splays matching the start / end range that are valid for as_of_time
+        selected = self.index.select(symbol, start, end, as_of_time)
+        if selected.empty:
+            return selected
 
         # load all ticks in range into memory
         loaded_dfs = []
         for index, row in selected.iterrows():
             loaded_dfs.append(pd.read_hdf(row['path']))
 
-        # select ticks matching the exact start/end timestamps
+        # pass 2: select ticks matching the exact start/end timestamps
         all_ticks = pd.concat(loaded_dfs)
         time_mask = (all_ticks.index.get_level_values(self.timestamp_column) >= start) \
-            & (all_ticks.index.get_level_values(self.timestamp_column) <= end)
+                    & (all_ticks.index.get_level_values(self.timestamp_column) <= end)
         return all_ticks.loc[time_mask]
 
     def insert(self, symbol: str, ts: BiTimestamp, ticks: pd.DataFrame):
         self._check_closed('insert')
         as_at_date = ts.as_at()
 
-        # if there's at least one entry in the index for this (symbol, as_at_date
-        # increment the version and set the start/end times such that the previous
-        # version is logically deleted and the next version becomes latest
-        if self.index.index.isin([(symbol, as_at_date)]).any():
-            all_versions = self.index.loc[[(symbol, as_at_date)]]
+        # compose a splay path based on YYYY/MM/DD, symbol and version and pass in as a functor
+        # soit can be populated with the bitemporal version
+        def create_write_path(version):
+            return self.base_path.joinpath('{}/{:02d}/{:02d}/{}_{:04d}.h5'.format(as_at_date.year,
+                                                                                  as_at_date.month,
+                                                                                  as_at_date.day,
+                                                                                  symbol, version))
 
-            start_time = datetime.datetime.utcnow()
-            end_time = datetime.datetime.max
+        write_path = self.index.insert(symbol, as_at_date, create_write_path)
 
-            prev_version = all_versions['version'][-1]
-            version = prev_version + 1
-            all_versions.loc[(all_versions['version'] == prev_version), 'end_time'] = start_time
-
-            self.index.update(all_versions)
-        else:
-            start_time = datetime.datetime.min
-            end_time = datetime.datetime.max
-            version = 0
-
-        # compose a splay path based on YYYY/MM/DD, symbol and version
-        write_path = self.base_path.joinpath('{}/{:02d}/{:02d}/{}_{:04d}.h5'.format(as_at_date.year,
-                                                                                    as_at_date.month,
-                                                                                    as_at_date.day,
-                                                                                    symbol, version))
-        write_path_txt = str(write_path)
-
-        # was not able to figure out a way to insert into a MultiIndex without setting the
-        # index columns but I suspect there is a nicer way to do the below
-        new_index_row = pd.DataFrame.from_dict({'symbol': [symbol],
-                                                'date': [as_at_date],
-                                                'start_time': [start_time],
-                                                'end_time': [end_time],
-                                                'version': [version],
-                                                'path': [write_path_txt]
-                                                })
-        new_index_row.set_index(['symbol', 'date'], inplace=True)
-        self.index = self.index.append(new_index_row)
-        self.index = self.index.loc[~self.index.index.duplicated(keep='first')]
-
-        # do the write, with blosc compression
+        # do the tick write, with blosc compression
         write_path.parent.mkdir(parents=True, exist_ok=True)
-        ticks.to_hdf(write_path_txt, 'ticks', mode='w', append=False, complevel=9, complib='blosc')
-
-        self._mark_dirty()
+        ticks.to_hdf(str(write_path), 'ticks', mode='w', append=False, complevel=9, complib='blosc')
 
     def delete(self, symbol: str, ts: BiTimestamp):
         self._check_closed('delete')
-        self._mark_dirty()
-        raise NotImplementedError
+        self.index.delete(symbol, ts.as_at_date)
 
     def destroy(self):
         if self.base_path.exists():
             shutil.rmtree(self.base_path)
 
     def close(self):
-        if self.dirty:
-            self._save_index()
+        if not self.closed:
+            self.index.flush()
             self.closed = True
 
     def _check_closed(self, operation):
         if self.closed:
             raise Exception('unable to perform operation while closed: ' + operation)
-
-    def _mark_dirty(self, dirty=True):
-        self.dirty = dirty
-
-    def _save_index(self):
-        # noinspection PyUnresolvedReferences
-        self.index.to_hdf(str(self.index_path), self.table_name, mode='w', append=False, complevel=9, complib='blosc')
-        self._mark_dirty(False)
 
 
 class AzureBlobTickstore(Tickstore):
@@ -256,7 +304,7 @@ class AzureBlobTickstore(Tickstore):
     """
 
     def select(self, symbol: str, start: datetime.datetime, end: datetime.datetime,
-               as_of_time: datetime.datetime = datetime.datetime.max) -> pd.DataFrame:
+               as_of_time: datetime.datetime = BiTimestamp.latest_as_of) -> pd.DataFrame:
         raise NotImplementedError
 
     def insert(self, symbol: str, ts: BiTimestamp, ticks: pd.DataFrame):
