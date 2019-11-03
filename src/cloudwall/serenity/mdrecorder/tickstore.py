@@ -61,6 +61,12 @@ class Tickstore(ABC):
         """
         pass
 
+    def flush(self):
+        """
+        Writes to disk, uploads data or otherwise commits any transient state without fully closing the store.
+        """
+        pass
+
     @abstractmethod
     def close(self):
         """
@@ -286,6 +292,9 @@ class LocalTickstore(Tickstore):
         if self.base_path.exists():
             shutil.rmtree(self.base_path)
 
+    def flush(self):
+        self.index.flush()
+
     def close(self):
         if not self.closed:
             self.index.flush()
@@ -312,6 +321,9 @@ class AzureBlobTickstore(Tickstore):
 
     def delete(self, symbol: str, ts: BiTimestamp):
         raise NotImplementedError
+
+    def flush(self):
+        pass
 
     def close(self):
         pass
