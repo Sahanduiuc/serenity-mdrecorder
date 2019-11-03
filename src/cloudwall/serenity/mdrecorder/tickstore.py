@@ -76,9 +76,10 @@ class LocalTickstore(Tickstore):
     Tickstore meant to run against local disk for maximum performance.
     """
 
-    def __init__(self, base_path: Path):
+    def __init__(self, base_path: Path, timestamp_column: str = 'date'):
         self.base_path = base_path.resolve()
         self.index_path = base_path.joinpath(Path('index.h5'))
+        self.timestamp_column = timestamp_column
 
         # initialize storage location
         self.base_path.mkdir(parents=True, exist_ok=True)
@@ -152,17 +153,24 @@ class LocalTickstore(Tickstore):
                as_of_time: datetime.datetime = datetime.datetime.max) -> pd.DataFrame:
         self._check_closed('select')
 
+        # grab the list of splays matching the start / end range that are valid for as_of_time
         symbol_data = self.index.loc[symbol]
         mask = (symbol_data.index.get_level_values('date') >= start) \
             & (symbol_data.index.get_level_values('date') <= end) \
-            & (symbol_data['end_time'] <= as_of_time)
+            & (symbol_data['start_time'] <= as_of_time) \
+            & (symbol_data['end_time'] >= as_of_time)
         selected = self.index.loc[symbol][mask]
 
+        # load all ticks in range into memory
         loaded_dfs = []
         for index, row in selected.iterrows():
             loaded_dfs.append(pd.read_hdf(row['path']))
 
-        return pd.concat(loaded_dfs)
+        # select ticks matching the exact start/end timestamps
+        all_ticks = pd.concat(loaded_dfs)
+        time_mask = (all_ticks.index.get_level_values('date') >= start) \
+            & (all_ticks.index.get_level_values('date') <= end)
+        return all_ticks.loc[time_mask]
 
     def insert(self, symbol: str, ts: BiTimestamp, ticks: pd.DataFrame):
         self._check_closed('insert')
