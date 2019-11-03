@@ -147,10 +147,22 @@ class LocalTickstore(Tickstore):
         else:
             self.index = pd.read_hdf(str(self.index_path))
 
+    # noinspection PyUnresolvedReferences
     def select(self, symbol: str, start: datetime.datetime, end: datetime.datetime,
                as_of_time: datetime.datetime = datetime.datetime.max) -> pd.DataFrame:
         self._check_closed('select')
-        return pd.DataFrame()
+
+        symbol_data = self.index.loc[symbol]
+        mask = (symbol_data.index.get_level_values('date') >= start) \
+            & (symbol_data.index.get_level_values('date') <= end) \
+            & (symbol_data['end_time'] <= as_of_time)
+        selected = self.index.loc[symbol][mask]
+
+        loaded_dfs = []
+        for index, row in selected.iterrows():
+            loaded_dfs.append(pd.read_hdf(row['path']))
+
+        return pd.concat(loaded_dfs)
 
     def insert(self, symbol: str, ts: BiTimestamp, ticks: pd.DataFrame):
         self._check_closed('insert')
@@ -165,10 +177,11 @@ class LocalTickstore(Tickstore):
             start_time = datetime.datetime.utcnow()
             end_time = datetime.datetime.max
 
-            end_times = all_versions['end_time']
-            end_times[-1] = start_time
+            prev_version = all_versions['version'][-1]
+            version = prev_version + 1
+            all_versions.loc[(all_versions['version'] == prev_version), 'end_time'] = start_time
 
-            version = all_versions['version'][-1] + 1
+            self.index.update(all_versions)
         else:
             start_time = datetime.datetime.min
             end_time = datetime.datetime.max
@@ -192,6 +205,7 @@ class LocalTickstore(Tickstore):
                                                 })
         new_index_row.set_index(['symbol', 'date'], inplace=True)
         self.index = self.index.append(new_index_row)
+        self.index = self.index.loc[~self.index.index.duplicated(keep='first')]
 
         # do the write, with blosc compression
         write_path.parent.mkdir(parents=True, exist_ok=True)
