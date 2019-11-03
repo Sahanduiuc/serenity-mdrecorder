@@ -4,8 +4,6 @@ from datetime import date
 
 from pytest_mock import MockFixture
 
-from cloudwall.serenity.mdrecorder.backfill.download_coinbase_history import CoinbaseHistoricalRatesDownloader
-
 
 def test_backfill_coinbase_trades(mocker: MockFixture):
     mocker.patch('os.makedirs')
@@ -24,8 +22,9 @@ def test_backfill_coinbase_trades(mocker: MockFixture):
                                                                 'volume': Decimal('1.3777413')}]
 
     mock_tickstore = mocker.patch('cloudwall.serenity.mdrecorder.tickstore.LocalTickstore').return_value
-    downloader = CoinbaseHistoricalRatesDownloader(mock_tickstore)
-    downloader.download('BTC-USD', start_date=date(2019, 7, 20), end_date=date(2019, 7, 20))
+
+    from cloudwall.serenity.mdrecorder.backfill.download_coinbase_history import backfill_coinbase_trades
+    backfill_coinbase_trades(symbol='BTC-USD', start_date=date(2019, 7, 20), end_date=date(2019, 7, 20))
 
     assert mock_tickstore.insert.call_count == 1
     assert mock_cbp_client.get_product_historic_rates.call_count == 6
