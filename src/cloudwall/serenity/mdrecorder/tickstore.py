@@ -187,7 +187,7 @@ class DataFrameIndex:
             end_time = BiTimestamp.latest_as_of
             version = 0
 
-        write_path = create_write_path_func(version)
+        write_path = create_write_path_func(int(version))
 
         # was not able to figure out a way to insert into a MultiIndex without re-setting the
         # index columns and de-duping but I suspect there is a nicer way to do the below
@@ -260,11 +260,13 @@ class LocalTickstore(Tickstore):
         for index, row in selected.iterrows():
             loaded_dfs.append(pd.read_hdf(row['path']))
 
-        # pass 2: select ticks matching the exact start/end timestamps
+        # pass 2: select ticks matching the exact start/end timestamps, and sort by index when done
         all_ticks = pd.concat(loaded_dfs)
         time_mask = (all_ticks.index.get_level_values(self.timestamp_column) >= start) \
                     & (all_ticks.index.get_level_values(self.timestamp_column) <= end)
-        return all_ticks.loc[time_mask]
+        result = all_ticks.loc[time_mask]
+        result.sort_index(inplace=True)
+        return result
 
     def insert(self, symbol: str, ts: BiTimestamp, ticks: pd.DataFrame):
         self._check_closed('insert')
@@ -272,7 +274,7 @@ class LocalTickstore(Tickstore):
 
         # compose a splay path based on YYYY/MM/DD, symbol and version and pass in as a functor
         # soit can be populated with the bitemporal version
-        def create_write_path(version):
+        def create_write_path(version: int):
             return self.base_path.joinpath('{}/{:02d}/{:02d}/{}_{:04d}.h5'.format(as_at_date.year,
                                                                                   as_at_date.month,
                                                                                   as_at_date.day,
