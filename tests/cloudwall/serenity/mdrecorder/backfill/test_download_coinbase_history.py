@@ -22,7 +22,8 @@ def test_backfill_coinbase_trades(mocker: MockFixture):
                                                                 'close': Decimal('10533.51'),
                                                                 'volume': Decimal('1.3777413')}]
 
-    mock_tickstore = mocker.patch('cloudwall.serenity.mdrecorder.backfill.download_coinbase_history.LocalTickstore').return_value
+    mock_tickstore = mocker.patch('cloudwall.serenity.mdrecorder.backfill.download_coinbase_history.LocalTickstore')\
+        .return_value
 
     backfill_coinbase_trades(symbol='BTC-USD', start_date=date(2019, 7, 20), end_date=date(2019, 7, 20))
 
