@@ -72,6 +72,7 @@ def backfill_coinbase_trades(staging_dir: str = '/mnt/raid/data/behemoth/db', sy
     tickstore = LocalTickstore(Path(staging_dir + '/COINBASE_PRO_ONE_MIN_BINS'), timestamp_column='time')
     downloader = CoinbaseHistoricalRatesDownloader(tickstore)
     downloader.download(symbol, start_date, end_date)
+    tickstore.close()
 
 
 if __name__ == '__main__':

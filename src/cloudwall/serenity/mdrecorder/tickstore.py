@@ -14,8 +14,8 @@ class BiTimestamp:
 
     # cannot use datetime.min / datetime.max due to limitations
     # see https://pandas.pydata.org/pandas-docs/stable/user_guide/timeseries.html#representing-out-of-bounds-spans
-    start_as_of = pd.Timestamp.min.to_pydatetime()
-    latest_as_of = pd.Timestamp.max.to_pydatetime()
+    start_as_of = pd.Timestamp.min.to_pydatetime(warn=False)
+    latest_as_of = pd.Timestamp.max.to_pydatetime(warn=False)
 
     def __init__(self, as_at_date: datetime.date, as_of_time: datetime.datetime = latest_as_of):
         self.as_at_date = as_at_date
@@ -263,15 +263,19 @@ class LocalTickstore(Tickstore):
         # pass 2: select ticks matching the exact start/end timestamps
         all_ticks = pd.concat(loaded_dfs)
         time_mask = (all_ticks.index.get_level_values(self.timestamp_column) >= start) \
-                    & (all_ticks.index.get_level_values(self.timestamp_column) <= end)
-        return all_ticks.loc[time_mask]
+            & (all_ticks.index.get_level_values(self.timestamp_column) <= end)
+
+        # sort the ticks -- probably need to optimize this to sort on paths and sort ticks on ingest
+        selected_ticks = all_ticks.loc[time_mask]
+        selected_ticks.sort_index(inplace=True)
+        return selected_ticks
 
     def insert(self, symbol: str, ts: BiTimestamp, ticks: pd.DataFrame):
         self._check_closed('insert')
         as_at_date = ts.as_at()
 
         # compose a splay path based on YYYY/MM/DD, symbol and version and pass in as a functor
-        # soit can be populated with the bitemporal version
+        # so it can be populated with the bitemporal version
         def create_write_path(version):
             return self.base_path.joinpath('{}/{:02d}/{:02d}/{}_{:04d}.h5'.format(as_at_date.year,
                                                                                   as_at_date.month,
