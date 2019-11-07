@@ -247,7 +247,7 @@ class LocalTickstore(Tickstore):
         self.closed = False
 
     def select(self, symbol: str, start: datetime.datetime, end: datetime.datetime,
-               as_of_time: datetime.datetime = BiTimestamp.latest_as_of) -> pd.DataFrame:
+               as_of_time: datetime.datetime = datetime.datetime.utcnow()) -> pd.DataFrame:
         self._check_closed('select')
 
         # pass 1: grab the list of splays matching the start / end range that are valid for as_of_time
