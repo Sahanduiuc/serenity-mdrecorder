@@ -54,6 +54,9 @@ class JournalReader:
     def get_length(self):
         return ~struct.unpack('i', self.mm[0:4])[0]
 
+    def get_offset(self):
+        return self.offset
+
     def read_byte(self) -> int:
         ret = self.mm[self.offset]
         self._advance(1)

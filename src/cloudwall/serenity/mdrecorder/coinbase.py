@@ -1,3 +1,5 @@
+import datetime
+
 import fire
 import json
 
@@ -86,6 +88,7 @@ class CoinbaseProSubscriber:
         if msg_txt:
             msg = json.loads(msg_txt)
             if msg['type'] == 'match':
+                self.appender.write_double(datetime.datetime.utcnow().timestamp())
                 self.appender.write_long(msg['sequence'])
                 self.appender.write_long(msg['trade_id'])
                 self.appender.write_string(msg['product_id'])
