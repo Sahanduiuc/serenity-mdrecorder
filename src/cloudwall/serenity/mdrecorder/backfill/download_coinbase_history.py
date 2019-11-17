@@ -3,7 +3,6 @@ from pathlib import Path
 import coinbasepro as cbp
 import datetime
 import fire
-import os
 import pandas as pd
 
 from cloudwall.serenity.mdrecorder.tickstore import Tickstore, LocalTickstore, BiTimestamp
