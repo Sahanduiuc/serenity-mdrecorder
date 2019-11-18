@@ -144,7 +144,7 @@ class JournalReader:
         return self._unpack_next('h', 2)
 
     def read_int(self) -> int:
-        return self._unpack_next('h', 4)
+        return self._unpack_next('i', 4)
 
     def read_long(self) -> int:
         return self._unpack_next('q', 8)
