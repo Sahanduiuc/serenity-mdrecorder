@@ -53,10 +53,12 @@ def upload_ticks_daily():
 
     func_logger.info("uploading journaled ticks to Behemoth for UTC date " + str(upload_date))
     df = pd.DataFrame(records)
+    df.set_index('time', inplace=True)
     func_logger.info("extracted {} records".format(len(df)))
 
-    tickstore = LocalTickstore(Path('/mnt/raid/data/behemoth/db/COINBASE_PRO_TRADES'))
+    tickstore = LocalTickstore(Path('/mnt/raid/data/behemoth/db/COINBASE_PRO_TRADES'), 'time')
     tickstore.insert(symbol, BiTimestamp(upload_date), df)
+    tickstore.close()
 
     func_logger.info("inserted {} records".format(len(df)))
 
