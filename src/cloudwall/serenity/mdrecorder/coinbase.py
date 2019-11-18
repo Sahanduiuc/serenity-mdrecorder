@@ -1,34 +1,26 @@
 import datetime
-
 import fire
 import json
+import logging
 
-from cloudwall.serenity.mdrecorder.api import MDSnapshotClient
 from cloudwall.serenity.mdrecorder.journal import Journal
-from coinbasepro import PublicClient
+from cloudwall.serenity.mdrecorder.utils import init_logging
 from pathlib import Path
 from tornado import httpclient
 from tornado import httputil
 from tornado import websocket
 from tornado.ioloop import IOLoop, PeriodicCallback
 
-APPLICATION_JSON = 'application/json'
 
+APPLICATION_JSON = 'application/json'
 DEFAULT_KEEPALIVE_TIMEOUT_MILLIS = 1000
 DEFAULT_CONNECT_TIMEOUT_SEC = 60
 DEFAULT_REQUEST_TIMEOUT_SEC = 60
 
 
-class CoinbaseProSnapshotClient(MDSnapshotClient):
-    def __init__(self):
-        super().__init__()
-        self.client = PublicClient()
-
-    def snap_last_trade(self, symbol: str) -> dict:
-        return self.client.get_product_ticker(symbol)
-
-
 class CoinbaseProSubscriber:
+    logger = logging.getLogger(__name__)
+
     def __init__(self, symbol: str, journal: Journal, loop: IOLoop = IOLoop.instance(),
                  url: str = 'wss://ws-feed.pro.coinbase.com',
                  keep_alive_timeout: int = DEFAULT_KEEPALIVE_TIMEOUT_MILLIS,
@@ -42,9 +34,12 @@ class CoinbaseProSubscriber:
 
         self._ws_connection = None
         self.loop = loop
+
+        # noinspection PyTypeChecker
         PeriodicCallback(self._keep_alive, keep_alive_timeout).start()
 
     async def connect(self):
+        self.logger.info("connecting to {} and subscribing to {} trades".format(self.url, self.symbol))
         headers = httputil.HTTPHeaders({'Content-Type': APPLICATION_JSON})
         request = httpclient.HTTPRequest(url=self.url,
                                          connect_timeout=self.connect_timeout,
@@ -101,7 +96,7 @@ class CoinbaseProSubscriber:
 
     async def _keep_alive(self):
         if self._ws_connection is None:
-            print('Attempting to reconnect in keep alive timer')
+            self.logger.info('Disconnected; attempting to reconnect in keep alive timer')
             await self.connect()
 
     def _on_connection_close(self):
@@ -109,13 +104,18 @@ class CoinbaseProSubscriber:
         pass
 
 
-def subscribe_coinbase_trades(journal_path: str = '/mnt/raid/data/behemoth/journals/COINBASE_TRADES/BTC-USD'):
+def subscribe_coinbase_trades(journal_path: str = '/mnt/raid/data/behemoth/journals/COINBASE_PRO_TRADES/BTC-USD'):
+    logger = logging.getLogger(__name__)
+
     journal = Journal(Path(journal_path))
     subscriber = CoinbaseProSubscriber('BTC-USD', journal)
+
+    logger.info("journaling ticks to {}".format(journal_path))
+
     IOLoop.instance().run_sync(subscriber.connect)
     IOLoop.instance().start()
 
 
 if __name__ == '__main__':
+    init_logging()
     fire.Fire(subscribe_coinbase_trades)
-

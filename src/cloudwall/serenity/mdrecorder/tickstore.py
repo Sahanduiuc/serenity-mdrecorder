@@ -225,6 +225,9 @@ class DataFrameIndex:
     def _mark_dirty(self, dirty=True):
         self.dirty = dirty
 
+    def __del__(self):
+        self.flush()
+
 
 class LocalTickstore(Tickstore):
     """
@@ -307,6 +310,9 @@ class LocalTickstore(Tickstore):
     def _check_closed(self, operation):
         if self.closed:
             raise Exception('unable to perform operation while closed: ' + operation)
+
+    def __del__(self):
+        self.close()
 
 
 class AzureBlobTickstore(Tickstore):
