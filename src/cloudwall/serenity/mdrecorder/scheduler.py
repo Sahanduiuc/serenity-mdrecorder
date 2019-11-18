@@ -18,7 +18,7 @@ def upload_ticks_daily():
     upload_date = datetime.datetime.utcnow().date() - datetime.timedelta(1)
 
     symbol = 'BTC-USD'
-    journal = Journal(Path('/mnt/raid/data/behemoth/journals/COINBASE_PRO_TRADES/' + symbol))
+    journal = Journal(Path('/behemoth/journals/COINBASE_PRO_TRADES/' + symbol))
     reader = journal.create_reader(upload_date)
     length = reader.get_length()
     records = []
@@ -47,7 +47,7 @@ def upload_ticks_daily():
     df.set_index('time', inplace=True)
     func_logger.info("extracted {} records".format(len(df)))
 
-    tickstore = LocalTickstore(Path('/mnt/raid/data/behemoth/db/COINBASE_PRO_TRADES'), 'time')
+    tickstore = LocalTickstore(Path('/behemoth/db/COINBASE_PRO_TRADES'), 'time')
     tickstore.insert(symbol, BiTimestamp(upload_date), df)
     tickstore.close()
 

@@ -1,17 +1,18 @@
 version: '2'
 services:
-    serenity_mdrecorder:
-        build: .
-        container_name: "serenity_mdrecorder"
-        links:
-            - mongodb
-        depends_on:
-            - mongodb
-    mongodb:
-        image: mongo:latest
-        container_name: "mongodb"
+    coinbase_mdrecorder:
+        build:
+            context: .
+            dockerfile: ./docker/coinbase_mdrecorder/Dockerfile
+        container_name: "coinbase_mdrecorder"
         volumes:
-          - /mnt/raid/data/behemoth/arctic:/data/db
-        ports:
-            - 27017:27017
-        command: mongod
+            - /mnt/raid/data/behemoth:/behemoth
+        depends_on:
+            - scheduler
+    scheduler:
+        build:
+            context: .
+            dockerfile: ./docker/scheduler/Dockerfile
+        container_name: "scheduler"
+        volumes:
+            - /mnt/raid/data/behemoth:/behemoth

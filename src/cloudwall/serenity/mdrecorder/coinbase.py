@@ -104,7 +104,7 @@ class CoinbaseProSubscriber:
         pass
 
 
-def subscribe_coinbase_trades(journal_path: str = '/mnt/raid/data/behemoth/journals/COINBASE_PRO_TRADES/BTC-USD'):
+def subscribe_coinbase_trades(journal_path: str = '/behemoth/journals/COINBASE_PRO_TRADES/BTC-USD'):
     logger = logging.getLogger(__name__)
 
     journal = Journal(Path(journal_path))
