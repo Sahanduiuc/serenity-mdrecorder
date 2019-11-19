@@ -8,18 +8,9 @@ from apscheduler.schedulers.tornado import TornadoScheduler
 from apscheduler.triggers.cron import CronTrigger
 from cloudwall.serenity.mdrecorder.journal import Journal
 from cloudwall.serenity.mdrecorder.tickstore import LocalTickstore, BiTimestamp
+from cloudwall.serenity.mdrecorder.utils import init_logging
 from pathlib import Path
 from tornado.ioloop import IOLoop
-
-# initialize logging
-
-logger = logging.getLogger()
-logger.setLevel(logging.DEBUG)
-console_logger = logging.StreamHandler()
-console_logger.setLevel(logging.INFO)
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-console_logger.setFormatter(formatter)
-logger.addHandler(console_logger)
 
 
 def upload_ticks_daily():
@@ -27,11 +18,11 @@ def upload_ticks_daily():
     upload_date = datetime.datetime.utcnow().date() - datetime.timedelta(1)
 
     symbol = 'BTC-USD'
-    journal = Journal(Path('/mnt/raid/data/behemoth/journals/COINBASE_TRADES/' + symbol))
+    journal = Journal(Path('/behemoth/journals/COINBASE_PRO_TRADES/' + symbol))
     reader = journal.create_reader(upload_date)
     length = reader.get_length()
     records = []
-    while reader.get_offset() < length:
+    while reader.get_pos() < length:
         time = reader.read_double()
         sequence = reader.read_long()
         trade_id = reader.read_long()
@@ -56,7 +47,7 @@ def upload_ticks_daily():
     df.set_index('time', inplace=True)
     func_logger.info("extracted {} records".format(len(df)))
 
-    tickstore = LocalTickstore(Path('/mnt/raid/data/behemoth/db/COINBASE_PRO_TRADES'), 'time')
+    tickstore = LocalTickstore(Path('/behemoth/db/COINBASE_PRO_TRADES'), 'time')
     tickstore.insert(symbol, BiTimestamp(upload_date), df)
     tickstore.close()
 
@@ -64,6 +55,8 @@ def upload_ticks_daily():
 
 
 if __name__ == '__main__':
+    init_logging()
+
     scheduler = TornadoScheduler()
     scheduler.add_jobstore(MemoryJobStore())
     scheduler.add_executor(TornadoExecutor())
@@ -73,6 +66,7 @@ if __name__ == '__main__':
 
     # Execution will block here until Ctrl+C (Ctrl+Break on Windows) is pressed.
     try:
+        logger = logging.getLogger(__name__)
         logger.info("starting Tornado")
         IOLoop.instance().start()
     except (KeyboardInterrupt, SystemExit):
