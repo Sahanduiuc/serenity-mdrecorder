@@ -1,5 +1,14 @@
 version: '2'
 services:
+    binance_mdrecorder:
+        build:
+            context: .
+            dockerfile: ./docker/binance_mdrecorder/Dockerfile
+        container_name: "binance_mdrecorder"
+        volumes:
+            - /mnt/raid/data/behemoth:/behemoth
+        depends_on:
+            - scheduler
     coinbase_mdrecorder:
         build:
             context: .
