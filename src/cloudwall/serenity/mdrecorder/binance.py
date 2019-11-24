@@ -10,7 +10,7 @@ from pathlib import Path
 from tornado.ioloop import IOLoop
 
 
-class CoinbaseProSubscriber(WebsocketSubscriber):
+class BinanceSubscriber(WebsocketSubscriber):
 
     def __init__(self, symbol: str, journal: Journal, loop: IOLoop = IOLoop.instance(),
                  keep_alive_timeout: int = DEFAULT_KEEPALIVE_TIMEOUT_MILLIS,
@@ -19,31 +19,30 @@ class CoinbaseProSubscriber(WebsocketSubscriber):
         super().__init__(symbol, journal, loop, keep_alive_timeout, connect_timeout, request_timeout)
 
     def _get_url(self):
-        return 'wss://ws-feed.pro.coinbase.com'
+        return 'wss://stream.binance.com:9443/stream'
 
     def _create_subscribe_msg(self):
         return {
-            'type': 'subscribe',
-            'product_ids': [self.symbol],
-            'channels': ['matches', 'heartbeat']
+            "method": "SUBSCRIBE",
+            "params": ["btcusdt@trade"],
+            "id": 1
         }
 
     def _on_message_json(self, msg):
-        if msg['type'] == 'match':
+        if 'stream' in msg:
             self.appender.write_double(datetime.datetime.utcnow().timestamp())
-            self.appender.write_long(msg['sequence'])
-            self.appender.write_long(msg['trade_id'])
-            self.appender.write_string(msg['product_id'])
-            self.appender.write_short(1 if msg['side'] == 'buy' else 0)
-            self.appender.write_double(float(msg['size']))
-            self.appender.write_double(float(msg['price']))
+            self.appender.write_long(msg['data']['E'])
+            self.appender.write_string(msg['data']['s'])
+            self.appender.write_boolean(msg['data']['m'])
+            self.appender.write_double(float(msg['data']['q']))
+            self.appender.write_double(float(msg['data']['p']))
 
 
-def subscribe_coinbase_trades(journal_path: str = '/behemoth/journals/COINBASE_PRO_TRADES/BTC-USD'):
+def subscribe_binance_trades(journal_path: str = '/behemoth/journals/BINANCE_TRADES/BTC-USDT'):
     logger = logging.getLogger(__name__)
 
     journal = Journal(Path(journal_path))
-    subscriber = CoinbaseProSubscriber('BTC-USD', journal)
+    subscriber = BinanceSubscriber('BTC-USDT', journal)
 
     logger.info("journaling ticks to {}".format(journal_path))
 
@@ -53,4 +52,4 @@ def subscribe_coinbase_trades(journal_path: str = '/behemoth/journals/COINBASE_P
 
 if __name__ == '__main__':
     init_logging()
-    fire.Fire(subscribe_coinbase_trades)
+    fire.Fire(subscribe_binance_trades)
