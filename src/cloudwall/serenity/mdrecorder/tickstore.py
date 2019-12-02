@@ -155,7 +155,7 @@ class DataFrameIndex:
     def select(self, symbol: str, start: datetime.datetime, end: datetime.datetime,
                as_of_time: datetime.datetime) -> pd.DataFrame:
         # short circuit if symbol missing
-        if not self.df.index.get_level_values('symbol').contains(symbol):
+        if symbol not in self.df.index.get_level_values('symbol'):
             return pd.DataFrame()
 
         # find all dates in range where as_of_time is between start_time and end_time
